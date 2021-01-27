@@ -1,8 +1,11 @@
 'use strict'
 
 var validator = require('validator');
+var fs = require('fs');
+var path = require('path');
 const banda = require('../models/banda');
 var Banda = require('../models/banda');
+const { exists } = require('../models/banda');
 
 
 var controller = {
@@ -72,7 +75,7 @@ var controller = {
             var validate_year = !validator.isEmpty(params.year);
             var validate_image = !validator.isEmpty(params.image);
         } catch (error) {
-            return res.status(200).send({
+            return res.status(404).send({
                 status: error,
                 message: 'Faltan datos por enviar'
             })
@@ -84,7 +87,7 @@ var controller = {
             banda.title = params.title;
             banda.description = params.description;
             banda.year = params.year;
-            banda.image = null;
+            banda.image = params.image;
 
 
             banda.save((err, bandaStored) => {
@@ -134,6 +137,107 @@ var controller = {
             });
         })
     },
+
+    search: (req, res) => {
+        var searchString = req.params.search;
+
+        Banda.find({ "$or": [
+            { "title" : { "$regex": searchString, "$options": "i"}},
+            { "content" : { "$regex": searchString, "$options": "i"}}
+        ]})
+        .sort([['date', 'descending']])
+        .exec((err, bandas) => {
+
+            if(err){
+                return res.status(500).send({
+                    status: 'error',
+                    message: 'Error en la petición!'
+                })
+            }
+
+            if(!bandas || bandas.length <= 0){
+                return res.status(404).send({
+                    status: 'error',
+                    message: 'No hay bandas que coincidan con tu busqueda!'
+                })
+            }
+
+            return res.status(200).send({
+                status: 'success',
+                bandas
+            })
+        })
+    },
+
+    upload: (req, res) => {
+
+
+        var file_name = 'Imagen no subida...'
+
+        if(!req.files){
+            return res.status(404).send({
+                status: 'error',
+                message: file_name
+            });
+        }
+
+        var file_path = req.files.file0.path;
+        var file_split = file_path.split('\\');
+
+
+        var file_name = file_split[2];
+
+        var extension_split = file_name.split('\.');
+        var file_ext = extension_split[1];
+
+        if(file_ext != 'png' && file_ext != 'jpg' && file_ext != 'jpeg' && file_ext != 'gif'){
+            fs.unlink(file_path, (err) => {
+                return res.status(200).send({
+                    status: 'error',
+                    message: 'La extensión de la imagen no es válida'
+                })
+            })
+        }else{
+            var bandaId = req.params.id;
+
+            if(bandaId){
+                Banda.findOneAndUpdate({_id: bandaId}, {image: file_name}, {new: true}, (err, bandaUpdated) => {
+                    if(err || !bandaUpdated){
+                        return res.status(404).send({
+                            status: 'error',
+                            message: 'Error al guardar la imagen de la banda!'
+                        })
+                    }
+                    
+                    return res.status(200).send({
+                        status: 'success',
+                        banda: bandaUpdated
+                    })
+                });
+            }else{
+                return res.status(200).send({
+                    status: 'success',
+                    image: file_name
+                })
+            }
+        }
+    },
+
+    getImage: (req, res) => {
+        var file = req.params.image;
+        var path_file = './upload/bandas/'+file;
+
+        fs.exists(path_file, (exists) => {
+            if(exists){
+                return res.sendFile(path.resolve(path_file));
+            }else{
+                return res.status(404).send({
+                    status: 'error',
+                    message: 'La imagen no existe'
+                })
+            }
+        })
+    }
 }
 
 
